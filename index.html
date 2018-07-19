@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>simple-aws-cognito-starter</title>
+        <meta charset="utf-8">
+
+        <script src="amazon-cognito-identity.min.js"></script>
+
+        <script src="https://sdk.amazonaws.com/js/aws-sdk-2.6.10.min.js"></script>
+
+        <style>
+            .NotConfig { position: absolute; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.3); color: #fff; font-size: 1.5rem; display: flex; justify-content: center; align-items: center; }
+            .Config { width: 100%; max-width: 500px; height: 100px; margin-bottom: 3rem; }
+            .Config textarea { width: 100%; height: 100%;}
+            .Wrapper { float: left; }
+            .Login:not(.Login_Flag) { display: none }
+        </style>
+
+    </head>
+    <body>
+
+<div class="Config">
+<textarea id='config-values'>
+{
+    "region" : "ap-northeast-2",
+    "pool_id" : "",
+    "client_id" : "",
+    "identity_pool_id" : ""
+}
+</textarea>
+<br />
+
+<button onclick="setConfig()">AWS 설정값 주입</button>
+
+</div>
+
+        <!-- 
+            Amazon Cognito Identity SDK for JavaScript
+
+            https://github.com/aws-amplify/amplify-js/tree/master/packages/amazon-cognito-identity-js
+         -->
+        
+        <div class="Wrapper">
+        
+            <label>Email
+                <div>
+                    <input id="signup-email" type="text" placeholder="Email"/>
+                </div>
+            </label>
+
+            <label>Password
+                <div>
+                    <input id="signup-password" type="password" placeholder="Password"/>
+                </div>
+            </label>
+            <br />
+
+            <p />
+
+            <button onclick="onSignUp()">회원가입</button>
+
+            <p />
+
+            <label>인증 이메일
+                <input id="confirm-email" type="text" placeholder="Confirmation Email"/>
+            </label>
+
+            <br />
+
+            <label>인증번호
+                <input id="confirm-code" type="text" placeholder="ConfirmationCode"/>
+            </label>
+
+            <button onclick="onConfirm()">이메일 인증</button>
+            <button onclick="onResendConfirm()">이메일 재전송</button>
+
+        </div>
+
+        <div class="Wrapper">
+
+            <div class="Login Login_Flag">
+
+                <label>Email
+                    <div>
+                        <input id="signin-email" type="text" placeholder="Email"/>
+                    </div>
+                </label>
+
+                <br />
+
+                <label>Password
+                    <div>
+                        <input id="signin-password" type="password" placeholder="Password"/>
+                    </div>
+                </label>
+
+                <br />
+
+                <button onClick="onSignIn()">로그인</button>
+
+                <h3>비밀번호 분실</h3>
+                <label>Email
+                    <div>
+                        <input id="forgot-email" type="text" placeholder="Email"/>
+                    </div>
+                </label>
+                <button onClick="onForGotPassword()">비밀번호 찾기</button>
+
+            </div>
+
+            <div class="Login">
+
+                <strong id='user-email'></strong>님 안녕하세요.
+                <button onClick="onSignOut()">로그아웃</button>
+                <br />
+
+                <label>Password
+                    <div>
+                        <input id="change-password" type="password" placeholder="Password"/>
+                    </div>
+                </label>
+
+                <label>New Password
+                    <div>
+                        <input id="change-new-password" type="password" placeholder="New Password"/>
+                    </div>
+                </label>
+                <button onClick="onChangePassword()">비밀번호 변경</button>
+
+                <h3>회원 탈퇴</h3>
+                <button onClick="onDeleteUser()">회원 탈퇴</button>
+                
+            </div>
+        
+        </div>
+
+        <div class="NotConfig">활성화를 위해 AWS 설정값을 주입해주세요.</div>
+
+        <script>
+
+            var CONFIG = {},
+                userPool,
+                userData,
+                user
+
+            const getValue = id => document.getElementById(id).value
+            const flagLogin = _ => Array.from(document.querySelectorAll('.Login')).forEach(e => e.classList.toggle('Login_Flag'))
+            const setConfig = _ => {
+
+                CONFIG = JSON.parse(document.getElementById('config-values').textContent)
+
+                document.querySelector('.NotConfig').style.display = 'none'
+
+                userPool = new AmazonCognitoIdentity.CognitoUserPool({
+                    UserPoolId : CONFIG.pool_id, ClientId : CONFIG.client_id
+                })
+
+                userData = { Pool : userPool, Username : '' }
+
+                user = userPool.getCurrentUser()
+                user && userSession()
+
+            }
+
+
+
+
+
+
+
+
+
+
+            function userSession() {
+
+                user.getSession((err, data) => {
+
+                    err ?
+                    console.error(err.message || JSON.stringify(err)) 
+                    : (
+                        console.log('You are now logged in.'),
+                        AWS.config.region = CONFIG.region,
+                        AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+                            IdentityPoolId: CONFIG.identity_pool_id,
+                            Logins: {
+                                [`cognito-idp.${ CONFIG.region }.amazonaws.com/${ CONFIG.pool_id }`] : data.getIdToken().getJwtToken()
+                            }
+                        }),
+                        AWS.config.credentials.refresh(error => {
+                            error ? console.error(error) : (
+                                console.log('Successfully logged!'),
+                                flagLogin(),
+                                user.getUserAttributes((err, data) => {
+                                    err ?
+                                    console.error(err.message || JSON.stringify(err)) 
+                                    : (
+                                        console.log('User Attributes: ', data),
+                                        document.getElementById('user-email').innerText = data[2].getValue()
+                                    )
+                                })
+                            )
+                        })
+                    )
+
+                })
+
+            }
+
+
+
+
+
+
+
+
+
+
+
+            const onSignUp = _ => {
+
+                let signUp = (email, password) => {
+
+                    userPool.signUp(
+                        email,
+                        password,
+                        [
+                            {
+                                Name: 'email',
+                                Value: email
+                            }
+                        ], null, (err, data) => {
+
+                            err ?
+                            console.error(err.message || JSON.stringify(err)) 
+                            : (
+                                console.log('Successfully signed up user! ', data.user),
+                                document.getElementById('confirm-email').value = data.user.getUsername()
+                            )
+
+                        }
+                    )
+
+                }
+
+                signUp(
+                    getValue('signup-email'), getValue('signup-password')
+                )
+
+            }
+
+
+
+
+
+
+
+
+
+
+            const onConfirm = _ => {
+
+                let confirmRegist = (email, code) => {
+
+                    user = new AmazonCognitoIdentity.CognitoUser(Object.assign(userData, { Username: email }))
+
+                    user.confirmRegistration(
+                        code,
+                        true,
+                        (err, data) => {
+
+                            err ?
+                            console.error(err.message || JSON.stringify(err)) 
+                            : console.log('Successfully confirmed user! ', data)
+                        }
+                    )
+                }
+
+                confirmRegist(
+                    getValue('confirm-email'),
+                    getValue('confirm-code')
+                )
+
+            }
+
+
+
+
+
+
+
+
+
+
+            const onResendConfirm = _ => {
+
+                let resendConfirm = email => {
+
+                    user = new AmazonCognitoIdentity.CognitoUser(Object.assign(userData, { Username: email }))
+
+                    user.resendConfirmationCode((err, data) => {
+                        err ?
+                        console.error(err.message || JSON.stringify(err))
+                        : console.log('Successfully resend confirmed user!', data)
+                    })
+
+                }
+
+                resendConfirm(
+                    getValue('confirm-email')
+                )
+                
+            }
+
+
+
+
+
+
+
+
+
+
+            const onSignIn = _ => {
+
+                let signin = (email, password) => {
+
+                    user = new AmazonCognitoIdentity.CognitoUser(Object.assign(userData, { Username: email }))
+
+                    user.authenticateUser(
+                        new AmazonCognitoIdentity.AuthenticationDetails({
+                            Username: email,
+                            Password: password
+                        }),
+                        {
+                            onSuccess: data => {
+
+                                let accessToken = data.getAccessToken().getJwtToken()
+
+                                console.log('accessToken', accessToken)
+
+                                AWS.config.region = CONFIG.region,
+                                AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+                                    IdentityPoolId : CONFIG.identity_pool_id,
+                                    Logins : {
+                                        [`cognito-idp.${ CONFIG.region }.amazonaws.com/${ CONFIG.pool_id }`] : data.getIdToken().getJwtToken()
+                                    }
+                                })
+
+                                AWS.config.credentials.refresh(error => {
+                                    error ? console.error(error) : (
+                                        console.log('Successfully logged!'),
+                                        flagLogin(),
+                                        user.getUserAttributes((err, data) => {
+                                            err ?
+                                            console.error(err.message || JSON.stringify(err)) 
+                                            : console.log('User Attributes: ', data)
+                                        })
+                                    )
+                                })
+
+
+                            },
+                            onFailure: err => console.error(err.message || JSON.stringify(err))
+                        }
+                    )
+
+                }
+
+
+                signin(
+                    getValue('signin-email'),
+                    getValue('signin-password')
+                )
+
+            }
+
+
+
+
+
+
+
+
+
+
+            const onSignOut = _ => user && (
+                user.signOut(),
+                flagLogin(),
+                console.log('Successfully logouted!')
+            )
+
+
+
+
+
+
+
+
+
+
+            const onForGotPassword = _ => {
+
+                let forgotPassword = email => {
+
+                    user = new AmazonCognitoIdentity.CognitoUser(Object.assign(userData, { Username: email }))
+
+                    user.forgotPassword({
+                        // successfully initiated reset password request
+                        onSuccess: data => console.log('CodeDeliveryData from forgotPassword: ', data),
+                        onFailure: err => console.error(err.message || JSON.stringify(err)),
+                        inputVerificationCode: data => {
+                            console.log('Code sent to: ', data)
+
+                            let code = prompt('이메일로 발송된 verification code를 입력해주세요.' ,'')
+
+                            let newPW = prompt('변경하실 새 비밀번호를 입력해주세요.' ,'')
+
+                            user.confirmPassword(code, newPW, {
+                                onSuccess: _ => console.log('Password confirmed!'),
+                                onFailure: err => console.log('Password not confirmed!')
+                            })
+
+                        }
+                    })
+
+                }
+
+                forgotPassword(
+                    getValue('forgot-email')
+                )
+
+            }
+
+
+
+
+
+
+
+
+
+
+            const onChangePassword = _ => {
+                
+                let changePassword = (password, newPassword) => {
+
+                    user.changePassword(password, newPassword, (err, data) => {
+                        err ?
+                        console.error(err.message || JSON.stringify(err))
+                        : (
+                            console.log('Successfully changed password! ', data),
+                            onSignOut()
+                        )
+                    })
+
+                }
+
+                changePassword(
+                    getValue('change-password'),
+                    getValue('change-new-password')
+                )
+
+            }
+
+
+
+
+
+
+
+
+
+
+            const onDeleteUser = _ => {
+
+                user.deleteUser((err, data) => {
+                    err ?
+                    console.error(err.message || JSON.stringify(err))
+                    : (
+                        console.log('Successfully deleted user! ', data),
+                        onSignOut()
+                    )
+                })
+                
+            }
+
+        </script>
+    </body>
+</html>
